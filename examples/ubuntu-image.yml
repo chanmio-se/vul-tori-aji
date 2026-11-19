@@ -1,0 +1,22 @@
+# Ubuntu ベースイメージを管理しているリポジトリ用。
+# リポジトリ内の Dockerfile と、レジストリ上のベースイメージの両方をスキャンする。
+name: CVE scan (Ubuntu base image)
+
+on:
+  schedule:
+    - cron: "10 18 * * *"
+  workflow_dispatch:
+
+jobs:
+  trivy:
+    # reusable workflow の呼び出しは actions.lock の対象外のため commit SHA で固定する
+    uses: mioarai/vul-tori-aji/.github/workflows/trivy-scan.yml@<COMMIT_SHA>
+    with:
+      target_name: ubuntu-base
+      scan_type: both
+      scan_ref: "."
+      image_refs: |
+        ubuntu:24.04
+        ghcr.io/mioarai/base-ubuntu:22.04
+      enable_misconfig: true
+    secrets: inherit

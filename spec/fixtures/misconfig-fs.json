@@ -1,0 +1,20 @@
+{
+  "SchemaVersion": 2,
+  "Results": [
+    {
+      "Target": "Dockerfile",
+      "Class": "config",
+      "Misconfigurations": [
+        { "ID": "DS0001", "Severity": "HIGH", "Message": "root user" },
+        { "ID": "DS0002", "Severity": "LOW", "Message": "latest tag" }
+      ]
+    },
+    {
+      "Target": "nginx.conf",
+      "Class": "config",
+      "Misconfigurations": [
+        { "ID": "NS0001", "Severity": "MEDIUM", "Message": "missing header" }
+      ]
+    }
+  ]
+}

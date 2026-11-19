@@ -1,0 +1,29 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../lib/cve_triage"
+
+usage = "usage: publish CENTRAL_DIR OUT_DIR TARGET SNAPSHOT BRANCH KEEP_SNAPSHOTS"
+abort usage unless ARGV.length == 6
+
+central_dir, out_dir, target, snapshot, branch, keep = ARGV
+
+store = CveTriage::SnapshotStore.new(
+  central_dir: central_dir,
+  out_dir: out_dir,
+  target: target,
+  snapshot: snapshot,
+  keep: keep
+)
+git = CveTriage::GitRepository.new(dir: central_dir)
+git.configure_author(name: "vul-tori-aji[bot]", email: "vul-tori-aji[bot]@users.noreply.github.com")
+
+result = CveTriage::Publisher.new(
+  store: store,
+  git: git,
+  target: target,
+  snapshot: snapshot,
+  branch: branch
+).call
+
+puts "Publish result: #{result}"
