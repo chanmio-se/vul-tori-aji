@@ -109,7 +109,7 @@ jobs:
       # reusable workflow は呼び出し元のコンテキストで動くため、
       # スクリプトと結果保存先のために集約リポジトリを明示的に checkout する。
       - name: Checkout central repo
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v7.0.1
         with:
           repository: ${{ inputs.central_repo }}
           ref: ${{ inputs.central_branch }}
@@ -118,7 +118,7 @@ jobs:
           fetch-depth: 1
 
       - name: Checkout target repo
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v7.0.1
         with:
           path: target
           persist-credentials: false
