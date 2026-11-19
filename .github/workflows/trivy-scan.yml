@@ -1,0 +1,224 @@
+name: CVE triage / Trivy scan (reusable)
+
+# 各サービスリポジトリから workflow_call で呼び出す共通スキャン。
+# スキャン結果と SBOM は集約リポジトリの results/<target_name>/ にコミットする。
+on:
+  workflow_call:
+    inputs:
+      target_name:
+        description: "成果物ディレクトリ名（例: rails-app, ubuntu-base, nginx-conf）"
+        required: true
+        type: string
+      central_repo:
+        description: 成果物を保存する集約リポジトリ（owner/repo）
+        required: true
+        type: string
+      central_branch:
+        description: 成果物をコミットするブランチ
+        required: false
+        default: main
+        type: string
+      scan_type:
+        description: fs（リポジトリ）/ image（Dockerイメージ）/ both
+        required: false
+        default: fs
+        type: string
+      scan_ref:
+        description: fs スキャン対象の相対パス（checkout 直下から）
+        required: false
+        default: "."
+        type: string
+      image_refs:
+        description: スキャン対象イメージ（改行区切り。scan_type=image/both で必須）
+        required: false
+        default: ""
+        type: string
+      enable_misconfig:
+        description: 設定ファイル（Dockerfile / nginx.conf 等）の Misconfig スキャン
+        required: false
+        default: true
+        type: boolean
+      ignore_unfixed:
+        description: 修正版が未公開の CVE を結果から除外する
+        required: false
+        default: false
+        type: boolean
+      severity:
+        description: 出力対象の重要度
+        required: false
+        default: CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN
+        type: string
+      registry:
+        description: docker login するレジストリ（optional secret を渡した場合のみ使用）
+        required: false
+        default: ghcr.io
+        type: string
+      keep_snapshots:
+        description: ターゲットごとに保持するスナップショット数（0 で無制限）
+        required: false
+        default: 30
+        type: number
+      trivy_version:
+        description: Trivy のバージョン（固定推奨）
+        required: false
+        default: v0.76.2
+        type: string
+      enable_triage:
+        description: Copilot 枠で新規・更新 CVE の AI トリアージを実行する
+        required: false
+        default: true
+        type: boolean
+      triage_model:
+        description: Copilot CLI で使うモデル（空文字で CLI の既定値）
+        required: false
+        default: claude-haiku-4.5
+        type: string
+      max_triage_findings:
+        description: 1 回の AI トリアージで調査する CVE の最大件数
+        required: false
+        default: 20
+        type: number
+    secrets:
+      CENTRAL_REPO_TOKEN:
+        description: 集約リポジトリへの contents:write 権限を持つトークン
+        required: true
+      REGISTRY_USERNAME:
+        description: プライベートイメージを取得する場合のユーザー名
+        required: false
+      REGISTRY_PASSWORD:
+        description: プライベートイメージを取得する場合のパスワード/トークン
+        required: false
+
+permissions:
+  contents: read
+  packages: read
+  # Copilot CLI を GITHUB_TOKEN で実行するために必要（Org 側のポリシーも要確認）
+  copilot-requests: write
+
+jobs:
+  trivy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CENTRAL_BRANCH: ${{ inputs.central_branch }}
+      TARGET_NAME: ${{ inputs.target_name }}
+      KEEP_SNAPSHOTS: ${{ inputs.keep_snapshots }}
+      REGISTRY: ${{ inputs.registry }}
+    steps:
+      # reusable workflow は呼び出し元のコンテキストで動くため、
+      # スクリプトと結果保存先のために集約リポジトリを明示的に checkout する。
+      - name: Checkout central repo
+        uses: actions/checkout@v4.2.2
+        with:
+          repository: ${{ inputs.central_repo }}
+          ref: ${{ inputs.central_branch }}
+          token: ${{ secrets.CENTRAL_REPO_TOKEN }}
+          path: central
+          fetch-depth: 1
+
+      - name: Checkout target repo
+        uses: actions/checkout@v4.2.2
+        with:
+          path: target
+          persist-credentials: false
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1.342.0
+        with:
+          ruby-version: "4.0"
+
+      # Action のバージョンは .github/workflows/actions.lock で commit に固定している。
+      - name: Setup Trivy
+        uses: aquasecurity/setup-trivy@v0.3.1
+        with:
+          version: ${{ inputs.trivy_version }}
+          cache: true
+
+      - name: Set scan metadata
+        run: |
+          echo "SNAPSHOT=$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_RUN_ID}" >> "$GITHUB_ENV"
+          echo "SCANNED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
+      - name: Login to container registry (optional)
+        env:
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: |
+          if [ -n "$REGISTRY_USERNAME" ] && [ -n "$REGISTRY_PASSWORD" ]; then
+            printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY" --username "$REGISTRY_USERNAME" --password-stdin
+          else
+            echo "Registry credentials not provided; skipping docker login."
+          fi
+
+      - name: Run Trivy scans
+        env:
+          OUT_DIR: ${{ github.workspace }}/scan
+          TARGET_DIR: ${{ github.workspace }}/target
+          SCAN_TYPE: ${{ inputs.scan_type }}
+          SCAN_REF: ${{ inputs.scan_ref }}
+          IMAGE_REFS: ${{ inputs.image_refs }}
+          ENABLE_MISCONFIG: ${{ inputs.enable_misconfig }}
+          IGNORE_UNFIXED: ${{ inputs.ignore_unfixed }}
+          SEVERITY: ${{ inputs.severity }}
+        run: ruby central/bin/scan
+
+      - name: Build summary
+        env:
+          SCANNED_AT: ${{ env.SCANNED_AT }}
+          SNAPSHOT: ${{ env.SNAPSHOT }}
+          RUN_ID: ${{ github.run_id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          ruby central/bin/summarize \
+            "$GITHUB_WORKSPACE/scan" \
+            "$TARGET_NAME" \
+            "$SCANNED_AT" \
+            "$RUN_ID" \
+            "$REPOSITORY" \
+            "$SNAPSHOT"
+
+      # ここではまだ central/ が origin/main の状態なので、直前のスナップショットを読める。
+      # publish は reset --hard するので、差分・トリアージ結果は scan/ に書いてからコミットする。
+      - name: Diff CVEs against previous snapshot
+        run: |
+          ruby central/bin/diff \
+            central \
+            "$GITHUB_WORKSPACE/scan" \
+            "$TARGET_NAME" \
+            "$SNAPSHOT"
+
+      - name: Setup Copilot CLI
+        if: ${{ inputs.enable_triage }}
+        run: npm install -g @github/copilot --no-audit --no-fund
+
+      - name: Triage new and updated CVEs with Copilot
+        if: ${{ inputs.enable_triage }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TRIAGE_MODEL: ${{ inputs.triage_model }}
+          MAX_TRIAGE_FINDINGS: ${{ inputs.max_triage_findings }}
+        run: |
+          ruby central/bin/triage \
+            "$GITHUB_WORKSPACE/scan" \
+            "$SNAPSHOT" \
+            "$TRIAGE_MODEL" \
+            "$MAX_TRIAGE_FINDINGS"
+
+      - name: Publish results to central repo
+        env:
+          SNAPSHOT: ${{ env.SNAPSHOT }}
+        run: |
+          ruby central/bin/publish \
+            central \
+            "$GITHUB_WORKSPACE/scan" \
+            "$TARGET_NAME" \
+            "$SNAPSHOT" \
+            "$CENTRAL_BRANCH" \
+            "$KEEP_SNAPSHOTS"
+
+      - name: Upload scan artifacts
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: trivy-${{ inputs.target_name }}
+          path: scan/
+          retention-days: 30

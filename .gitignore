@@ -1,0 +1,9 @@
+# ローカル検証用の一時出力
+/scan/
+/results/
+/target/
+/central/
+
+# Ruby
+/.bundle/
+/vendor/bundle/

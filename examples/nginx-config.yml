@@ -1,0 +1,26 @@
+# nginx.conf などのミドルウェア設定リポジトリ用。
+# Trivy の config スキャンで設定不備も検出する。
+name: CVE scan (nginx config)
+
+on:
+  schedule:
+    - cron: "20 18 * * *"
+  workflow_dispatch:
+
+# reusable workflow は呼び出し元の permission 以上を要求できないため、ここでも付与する。
+permissions:
+  contents: read
+  packages: read
+  copilot-requests: write
+
+jobs:
+  trivy:
+    # reusable workflow の呼び出しは actions.lock の対象外のため commit SHA で固定する
+    uses: <OWNER>/vul-tori-aji/.github/workflows/trivy-scan.yml@<COMMIT_SHA>
+    with:
+      central_repo: <OWNER>/vul-tori-aji
+      target_name: nginx-conf
+      scan_type: fs
+      scan_ref: "."
+      enable_misconfig: true
+    secrets: inherit

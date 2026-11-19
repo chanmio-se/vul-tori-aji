@@ -1,0 +1,25 @@
+# .github/workflows/actions.lock が workflow と同期しているか、
+# 固定された commit が上流で依然有効かを検証する。
+# 初期生成は `gh auth login` 後に `gh actions-lock` を実行すること（docs/setup.md 参照）。
+name: verify-lockfile
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - run: gh extension install github/gh-actions-lock --pin v0.5.0
+      - run: gh actions-lock --verify

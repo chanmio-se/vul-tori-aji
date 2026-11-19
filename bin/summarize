@@ -1,0 +1,23 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../lib/cve_triage"
+
+usage = "usage: summarize OUT_DIR TARGET SCANNED_AT RUN_ID REPOSITORY SNAPSHOT"
+abort usage unless ARGV.length == 6
+
+out_dir, target, scanned_at, run_id, repository, snapshot = ARGV
+artifacts = CveTriage::Artifacts.discover(out_dir)
+metadata = CveTriage::Summarizer::Metadata.new(
+  target: target,
+  scanned_at: scanned_at,
+  run_id: run_id,
+  repository: repository,
+  snapshot: snapshot
+)
+
+CveTriage::Summarizer.new(
+  artifacts: artifacts,
+  metadata: metadata,
+  paths: CveTriage::Paths.new(out_dir)
+).call

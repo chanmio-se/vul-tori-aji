@@ -1,0 +1,41 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../lib/cve_triage"
+
+usage = "usage: triage OUT_DIR SNAPSHOT [MODEL] [LIMIT]"
+abort usage unless (2..4).cover?(ARGV.length)
+
+out_dir, snapshot, model, limit_arg = ARGV
+limit = Integer(limit_arg || 20)
+paths = CveTriage::Paths.new(out_dir)
+abort "diff.json not found; run bin/diff first" unless paths.diff_json.file?
+
+diff = CveTriage::Differ::Result.from_h(JSON.parse(paths.diff_json.read))
+generated_at = Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+prompt = CveTriage::Ai::Prompt.new(diff: diff, limit: limit)
+if prompt.empty?
+  result = CveTriage::TriageResult.new(diff: diff, assessments: [], model: model,
+                                       generated_at: generated_at, status: "skipped")
+else
+  begin
+    response = CveTriage::Ai::CopilotClient.new(
+      model: model,
+      bin: ENV.fetch("COPILOT_BIN", "copilot")
+    ).call(prompt.call)
+    keys = diff.triage_targets.first(limit).map(&:key)
+    assessments = CveTriage::Ai::ResponseParser.call(response, keys: keys)
+    result = CveTriage::TriageResult.new(diff: diff, assessments: assessments,
+                                         model: model, generated_at: generated_at)
+  rescue StandardError => e
+    warn "warning: AI triage failed; continuing without assessments (#{e.message.lines.first&.chomp})"
+    result = CveTriage::TriageResult.new(diff: diff, assessments: [], model: model,
+                                         generated_at: generated_at, status: "error",
+                                         error: e.message)
+  end
+end
+
+paths.triage_json.write("#{JSON.pretty_generate(result.to_h)}\n")
+paths.triage_md.write(result.render)
+puts "Triage: status=#{result.to_h[:status]} findings=#{result.to_h[:counts][:triaged]}"

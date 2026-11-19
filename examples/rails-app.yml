@@ -1,0 +1,27 @@
+# 各 Rails アプリリポジトリの .github/workflows/cve-scan.yml に配置する。
+# 毎日 JST 03:00 (UTC 18:00) にリポジトリの Gemfile.lock などをスキャンする。
+name: CVE scan (Rails app)
+
+on:
+  schedule:
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+# reusable workflow は呼び出し元の permission 以上を要求できないため、ここでも付与する。
+permissions:
+  contents: read
+  packages: read
+  copilot-requests: write
+
+jobs:
+  trivy:
+    # reusable workflow の呼び出しは actions.lock の対象外のため commit SHA で固定する
+    uses: <OWNER>/vul-tori-aji/.github/workflows/trivy-scan.yml@<COMMIT_SHA>
+    with:
+      central_repo: <OWNER>/vul-tori-aji
+      target_name: rails-app
+      scan_type: fs
+      scan_ref: "."
+      enable_misconfig: true
+      ignore_unfixed: false
+    secrets: inherit

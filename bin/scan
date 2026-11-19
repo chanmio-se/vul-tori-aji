@@ -1,0 +1,11 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../lib/cve_triage"
+
+config = CveTriage::Config.from_env
+paths = CveTriage::Paths.new(config.out_dir)
+artifacts = CveTriage::Scanner.new(config: config, paths: paths).run
+
+puts "Scan outputs:"
+artifacts.all.each { |path| puts "  #{path.basename}" }

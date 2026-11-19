@@ -1,0 +1,10 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "components": [
+    { "type": "library", "name": "rails", "version": "7.0.1" },
+    { "type": "library", "name": "rack", "version": "2.2.0" },
+    { "type": "library", "name": "nokogiri", "version": "1.13.0" }
+  ]
+}
