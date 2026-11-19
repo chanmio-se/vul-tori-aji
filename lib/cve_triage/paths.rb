@@ -42,6 +42,22 @@ module CveTriage
       out_dir.join("meta.json")
     end
 
+    def diff_json
+      out_dir.join("diff.json")
+    end
+
+    def diff_md
+      out_dir.join("diff.md")
+    end
+
+    def triage_json
+      out_dir.join("triage.json")
+    end
+
+    def triage_md
+      out_dir.join("triage.md")
+    end
+
     # trivy が失敗した際に古い成果物が残らないよう、実行前に該当ファイルを消す。
     def clean!(path)
       FileUtils.rm_f(path)

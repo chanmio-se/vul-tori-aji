@@ -1,0 +1,31 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../lib/cve_triage"
+
+usage = "usage: diff CENTRAL_DIR OUT_DIR TARGET SNAPSHOT"
+abort usage unless ARGV.length == 4
+
+central_dir, out_dir, target, snapshot = ARGV
+paths = CveTriage::Paths.new(out_dir)
+history = CveTriage::History.new(central_dir: central_dir, target: target)
+previous_dir = history.latest(exclude: snapshot)
+previous_snapshot = previous_dir&.basename&.to_s
+
+previous = CveTriage::Reports::Findings.new(history.vulnerability_paths(previous_dir)).all
+current = CveTriage::Reports::Findings.new(CveTriage::Artifacts.discover(out_dir).vulnerabilities).all
+
+result = CveTriage::Differ.new(
+  previous: previous,
+  current: current,
+  snapshot: snapshot,
+  previous_snapshot: previous_snapshot
+).call
+
+paths.prepare!
+paths.diff_json.write("#{JSON.pretty_generate(result.to_h)}\n")
+paths.diff_md.write(CveTriage::DiffReport.new(result).render)
+
+counts = result.counts
+puts "Diff vs #{previous_snapshot || '(none)'}: " \
+     "added=#{counts[:added]} updated=#{counts[:updated]} removed=#{counts[:removed]}"

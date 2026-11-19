@@ -64,6 +64,21 @@ on:
         required: false
         default: v0.76.2
         type: string
+      enable_triage:
+        description: Copilot 枠で新規・更新 CVE の AI トリアージを実行する
+        required: false
+        default: true
+        type: boolean
+      triage_model:
+        description: Copilot CLI で使うモデル（空文字で CLI の既定値）
+        required: false
+        default: claude-haiku-4.5
+        type: string
+      max_triage_findings:
+        description: 1 回の AI トリアージで調査する CVE の最大件数
+        required: false
+        default: 20
+        type: number
     secrets:
       CENTRAL_REPO_TOKEN:
         description: 集約リポジトリへの contents:write 権限を持つトークン
@@ -78,6 +93,8 @@ on:
 permissions:
   contents: read
   packages: read
+  # Copilot CLI を GITHUB_TOKEN で実行するために必要（Org 側のポリシーも要確認）
+  copilot-requests: write
 
 jobs:
   trivy:
@@ -160,6 +177,33 @@ jobs:
             "$RUN_ID" \
             "$REPOSITORY" \
             "$SNAPSHOT"
+
+      # ここではまだ central/ が origin/main の状態なので、直前のスナップショットを読める。
+      # publish は reset --hard するので、差分・トリアージ結果は scan/ に書いてからコミットする。
+      - name: Diff CVEs against previous snapshot
+        run: |
+          ruby central/bin/diff \
+            central \
+            "$GITHUB_WORKSPACE/scan" \
+            "$TARGET_NAME" \
+            "$SNAPSHOT"
+
+      - name: Setup Copilot CLI
+        if: ${{ inputs.enable_triage }}
+        run: npm install -g @github/copilot --no-audit --no-fund
+
+      - name: Triage new and updated CVEs with Copilot
+        if: ${{ inputs.enable_triage }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TRIAGE_MODEL: ${{ inputs.triage_model }}
+          MAX_TRIAGE_FINDINGS: ${{ inputs.max_triage_findings }}
+        run: |
+          ruby central/bin/triage \
+            "$GITHUB_WORKSPACE/scan" \
+            "$SNAPSHOT" \
+            "$TRIAGE_MODEL" \
+            "$MAX_TRIAGE_FINDINGS"
 
       - name: Publish results to central repo
         env:

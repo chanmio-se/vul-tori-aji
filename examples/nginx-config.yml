@@ -7,6 +7,12 @@ on:
     - cron: "20 18 * * *"
   workflow_dispatch:
 
+# reusable workflow は呼び出し元の permission 以上を要求できないため、ここでも付与する。
+permissions:
+  contents: read
+  packages: read
+  copilot-requests: write
+
 jobs:
   trivy:
     # reusable workflow の呼び出しは actions.lock の対象外のため commit SHA で固定する
